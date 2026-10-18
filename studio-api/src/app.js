@@ -69,6 +69,7 @@ function createApp({ config, github, messageGenerator = generateCommitMessage, l
       const { message, source } = await messageGenerator(changes, {
         apiKey: config.geminiApiKey,
         model: config.geminiModel,
+        timeoutMs: config.geminiTimeoutMs,
         log,
       });
       const body = [

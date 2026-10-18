@@ -39,7 +39,7 @@ function sanitize(text) {
   return line;
 }
 
-async function generateCommitMessage(changes, { apiKey, model, fetchImpl = fetch, timeoutMs = 10000, log = console } = {}) {
+async function generateCommitMessage(changes, { apiKey, model, fetchImpl = fetch, timeoutMs = 20000, log = console } = {}) {
   const fallback = { message: templateMessage(changes), source: 'template' };
   if (!apiKey) return fallback;
   try {

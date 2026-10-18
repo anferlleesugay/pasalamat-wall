@@ -12,7 +12,9 @@ function loadConfig(env = process.env) {
     repo: env.GITHUB_REPO,
     branch: env.GITHUB_BRANCH || 'main',
     geminiApiKey: env.GEMINI_API_KEY || '',
-    geminiModel: env.GEMINI_MODEL || 'gemini-3.8-flash',
+    geminiModel: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
+    geminiTimeoutMs: Number(env.GEMINI_TIMEOUT_MS || 20000),
+
   };
 }
 
