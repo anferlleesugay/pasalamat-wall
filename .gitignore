@@ -1,0 +1,21 @@
+# secrets: never commit these
+.env
+*.env.local
+
+# dependencies and build output
+node_modules/
+dist/
+target/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# CI logs
+ci-logs/
