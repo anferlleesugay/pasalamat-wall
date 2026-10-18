@@ -1,0 +1,25 @@
+# Jenkins runs in its OWN compose project, separate from the app,
+# so the pipeline can redeploy the app without ever restarting Jenkins.
+# Start:  docker compose up -d --build   (inside infra/jenkins/)
+name: jenkins
+
+services:
+  jenkins:
+    build: .
+    image: pasalamat/jenkins:local
+    container_name: jenkins
+    user: root                                      # classroom/lab only: lets Jenkins use the Docker socket
+    restart: unless-stopped
+    ports:
+      - "8081:8080"                                 # Jenkins UI at http://localhost:8081
+      - "50000:50000"                               # agent port
+    environment:
+      TZ: Asia/Manila
+      JAVA_OPTS: -Duser.timezone=Asia/Manila
+    volumes:
+      - jenkins_home:/var/jenkins_home              # jobs, credentials, build history survive restarts
+      - /var/run/docker.sock:/var/run/docker.sock   # talk to the host's Docker engine
+
+volumes:
+  jenkins_home:
+    name: jenkins_home

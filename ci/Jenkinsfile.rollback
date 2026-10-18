@@ -1,0 +1,77 @@
+// Rollback job: redeploy images from an earlier build number. Nothing is rebuilt.
+// Create a second Jenkins Pipeline job that uses this file (Script Path: ci/Jenkinsfile.rollback).
+
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(name: 'ROLLBACK_TAG', defaultValue: '', description: 'Build number to go back to, e.g. 12. Leave empty to just list the available versions.')
+    }
+
+    environment {
+        TAG                  = "${params.ROLLBACK_TAG}"
+        COMPOSE_PROJECT_NAME = 'pasalamat'
+    }
+
+    stages {
+        stage('Available versions') {
+            steps {
+                sh '''
+                    echo "Build numbers you can roll back to (newest first):"
+                    docker images pasalamat/frontend --format '{{.Tag}}  ({{.CreatedSince}})' | grep -E '^[0-9]+ ' | sort -rn || true
+                '''
+            }
+        }
+
+        stage('Validate') {
+            when { expression { params.ROLLBACK_TAG?.trim() } }
+            steps {
+                script {
+                    if (!(params.ROLLBACK_TAG.trim() ==~ /\d+/)) {
+                        error("ROLLBACK_TAG must be a build number like 12, got '${params.ROLLBACK_TAG}'")
+                    }
+                }
+                sh '''
+                    for s in notes-api moderation-worker studio-api frontend proxy; do
+                      docker image inspect pasalamat/$s:$TAG > /dev/null 2>&1 \
+                        || { echo "Image pasalamat/$s:$TAG not found. Pick a number from the list above."; exit 1; }
+                    done
+                    echo "All images for build #$TAG exist"
+                '''
+            }
+        }
+
+        stage('Deploy old version') {
+            when { expression { params.ROLLBACK_TAG?.trim() } }
+            steps {
+                checkout scm
+                withCredentials([file(credentialsId: 'pasalamat-env', variable: 'APP_ENV_FILE')]) {
+                    sh 'cp "$APP_ENV_FILE" .env'
+                    sh 'docker compose up -d --no-build --remove-orphans --wait --wait-timeout 240'
+                    sh 'docker compose ps'
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            when { expression { params.ROLLBACK_TAG?.trim() } }
+            steps {
+                sh '''
+                    CURL="docker run --rm --network wall-frontend curlimages/curl:8.10.1 -fsS --retry 10 --retry-delay 3 --retry-all-errors"
+                    $CURL http://proxy/health/notes > /dev/null
+                    $CURL http://proxy/version.json | tee /dev/stderr | grep -q "\\"build\\":\\"$TAG\\""
+                    echo "Rolled back: build #$TAG is live"
+                '''
+            }
+        }
+    }
+
+    post {
+        always { sh 'rm -f .env' }
+    }
+}
