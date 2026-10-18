@@ -1,0 +1,119 @@
+# Pasalamat Wall: the whole application stack.
+# Start everything:   docker compose up -d --build
+# Jenkins deploys:    TAG=<build number> docker compose up -d --no-build
+name: pasalamat
+
+services:
+  # ---------- Database ----------
+  db:
+    image: postgres:16.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data      # named volume: data survives redeploys
+    networks: [backend]                         # no ports: not reachable from outside
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- Notes API (Java / Spring Boot) ----------
+  notes-api:
+    build: ./notes-api
+    image: pasalamat/notes-api:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [frontend, backend]
+
+  # ---------- Moderation worker (Python + Gemini) ----------
+  moderation-worker:
+    build: ./moderation-worker
+    image: pasalamat/moderation-worker:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${WORKER_GEMINI_MODEL:-gemini-3.8-flash}
+    depends_on:
+      notes-api:
+        condition: service_healthy              # notes-api's Flyway creates the tables first
+    networks: [frontend, backend]               # frontend: so the proxy can reach /health/worker
+
+  # ---------- Release Studio API (Node.js + GitHub + Gemini) ----------
+  studio-api:
+    build: ./studio-api
+    image: pasalamat/studio-api:${TAG:-latest}
+    restart: unless-stopped
+    environment:
+      STUDIO_PASSWORD: ${STUDIO_PASSWORD}
+      STUDIO_SECRET: ${STUDIO_SECRET}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_REPO: ${GITHUB_REPO}
+      GITHUB_BRANCH: ${GITHUB_BRANCH:-main}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${STUDIO_GEMINI_MODEL:-gemini-3.5-flash-lite}
+    networks: [frontend]
+
+  # ---------- Frontend (React, served by Nginx) ----------
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BUILD_NUMBER: ${TAG:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-local}
+    image: pasalamat/frontend:${TAG:-latest}
+    restart: unless-stopped
+    networks: [frontend]
+
+  # ---------- Reverse proxy: the single public entry point ----------
+  proxy:
+    build: ./proxy
+    image: pasalamat/proxy:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${PROXY_PORT:-8080}:80"                # the ONLY published port
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0   # lets non-root Nginx listen on port 80
+    depends_on:
+      frontend:
+        condition: service_healthy
+      notes-api:
+        condition: service_healthy
+      studio-api:
+        condition: service_healthy
+    networks: [frontend]
+
+  # ---------- Database admin UI at /adminer/ (still needs the DB password) ----------
+  adminer:
+    image: adminer:4.8.1
+    restart: unless-stopped
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [frontend, backend]
+
+networks:
+  frontend:
+    name: wall-frontend
+  backend:
+    name: wall-backend
+
+volumes:
+  db-data:
+    name: pasalamat-db-data
