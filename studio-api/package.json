@@ -1,0 +1,21 @@
+{
+  "name": "studio-api",
+  "version": "1.0.0",
+  "description": "Release Studio backend: edits site content and commits it to GitHub with an AI-written message",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "jest --ci"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "4.21.2"
+  },
+  "devDependencies": {
+    "jest": "29.7.0",
+    "supertest": "7.0.0"
+  }
+}
